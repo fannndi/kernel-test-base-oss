@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,6 +51,7 @@
 #include "cam_trace.h"
 #include "cam_cpas_api.h"
 #include "cam_common_util.h"
+#include "../cam_sync/cam_sync_private.h"
 
 #define ICP_WORKQ_TASK_CMD_TYPE 1
 #define ICP_WORKQ_TASK_MSG_TYPE 2
@@ -58,7 +59,7 @@
 #define ICP_DEV_TYPE_TO_CLK_TYPE(dev_type) \
 	((dev_type == CAM_ICP_RES_TYPE_BPS) ? ICP_CLK_HW_BPS : ICP_CLK_HW_IPE)
 
-#define ICP_DEVICE_IDLE_TIMEOUT 400
+#define ICP_DEVICE_IDLE_TIMEOUT 3000
 
 static struct cam_icp_hw_mgr icp_hw_mgr;
 
@@ -1462,6 +1463,8 @@ static int cam_icp_hw_mgr_create_debugfs_entry(void)
 		goto err;
 	}
 
+	/* Set default hang dump lvl */
+	icp_hw_mgr.a5_fw_dump_lvl = HFI_FW_DUMP_ON_FAILURE;
 	return rc;
 err:
 	debugfs_remove_recursive(icp_hw_mgr.dentry);
@@ -3569,6 +3572,22 @@ static bool cam_icp_mgr_is_valid_inconfig(struct cam_packet *packet)
 			packet->num_io_configs, IPE_IO_IMAGES_MAX,
 			num_in_map_entries, CAM_MAX_IN_RES);
 
+	/*
+	 * From the input parameter side, we add the
+	 * protection to avoid the kernel mem bort which
+	 * introduced from userspace, since we have the
+	 * limit on CAM_SYNC_MAX_OBJS for icp sync_obj num.
+	 */
+	for (i = 0 ; i < packet->num_io_configs; i++) {
+		if ((io_cfg_ptr[i].direction == CAM_BUF_INPUT) &&
+			(io_cfg_ptr[i].fence >= CAM_SYNC_MAX_OBJS)) {
+				in_config_valid = false;
+				CAM_ERR(CAM_ICP,
+					"In config fence/sync_obj(%u) more than allowed(%u)",
+					io_cfg_ptr[i].fence, (CAM_SYNC_MAX_OBJS - 1));
+		}
+	}
+
 	return in_config_valid;
 }
 
@@ -3680,8 +3699,8 @@ static int cam_icp_mgr_process_cmd_desc(struct cam_icp_hw_mgr *hw_mgr,
 			if (rc) {
 				CAM_ERR(CAM_ICP, "get cmd buf failed %x",
 					hw_mgr->iommu_hdl);
-				num_cmd_buf = (num_cmd_buf > 0) ?
-					num_cmd_buf-- : 0;
+				if (num_cmd_buf > 0)
+					--num_cmd_buf;
 				goto rel_cmd_buf;
 			}
 			*fw_cmd_buf_iova_addr = addr;
@@ -3704,8 +3723,8 @@ static int cam_icp_mgr_process_cmd_desc(struct cam_icp_hw_mgr *hw_mgr,
 				CAM_ERR(CAM_ICP, "get cmd buf failed %x",
 					hw_mgr->iommu_hdl);
 				*fw_cmd_buf_iova_addr = 0;
-				num_cmd_buf = (num_cmd_buf > 0) ?
-					num_cmd_buf-- : 0;
+				if (num_cmd_buf > 0)
+					--num_cmd_buf;
 				goto rel_cmd_buf;
 			}
 			if ((len <= cmd_desc[i].offset) ||

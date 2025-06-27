@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * (C) Copyright David Gibson <dwg@au1.ibm.com>, IBM Corporation.  2007.
- *
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of the
- * License, or (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
- *                                                                   USA
  */
 
 #include "dtc.h"
+#include "srcpos.h"
 
 #ifdef TRACE_CHECKS
 #define TRACE(c, ...) \
@@ -45,7 +31,7 @@ typedef void (*check_fn)(struct check *c, struct dt_info *dti, struct node *node
 struct check {
 	const char *name;
 	check_fn fn;
-	void *data;
+	const void *data;
 	bool warn, error;
 	enum checkstatus status;
 	bool inprogress;
@@ -78,12 +64,29 @@ static inline void  PRINTF(5, 6) check_msg(struct check *c, struct dt_info *dti,
 					   const char *fmt, ...)
 {
 	va_list ap;
-	va_start(ap, fmt);
+	char *str = NULL;
+	struct srcpos *pos = NULL;
+	char *file_str;
 
-	if ((c->warn && (quiet < 1))
-	    || (c->error && (quiet < 2))) {
-		fprintf(stderr, "%s: %s (%s): ",
-			strcmp(dti->outname, "-") ? dti->outname : "<stdout>",
+	if (!(c->warn && (quiet < 1)) && !(c->error && (quiet < 2)))
+		return;
+
+	if (prop && prop->srcpos)
+		pos = prop->srcpos;
+	else if (node && node->srcpos)
+		pos = node->srcpos;
+
+	if (pos) {
+		file_str = srcpos_string(pos);
+		xasprintf(&str, "%s", file_str);
+		free(file_str);
+	} else if (streq(dti->outname, "-")) {
+		xasprintf(&str, "<stdout>");
+	} else {
+		xasprintf(&str, "%s", dti->outname);
+	}
+
+	xasprintf_append(&str, ": %s (%s): ",
 			(c->error) ? "ERROR" : "Warning", c->name);
 		if (node) {
 			fprintf(stderr, "%s", node->fullpath);
@@ -94,7 +97,26 @@ static inline void  PRINTF(5, 6) check_msg(struct check *c, struct dt_info *dti,
 		vfprintf(stderr, fmt, ap);
 		fprintf(stderr, "\n");
 	}
+
+	va_start(ap, fmt);
+	xavsprintf_append(&str, fmt, ap);
 	va_end(ap);
+
+	xasprintf_append(&str, "\n");
+
+	if (!prop && pos) {
+		pos = node->srcpos;
+		while (pos->next) {
+			pos = pos->next;
+
+			file_str = srcpos_string(pos);
+			xasprintf_append(&str, "  also defined at %s\n", file_str);
+			free(file_str);
+		}
+	}
+
+	fputs(str, stderr);
+	free(str);
 }
 
 #define FAIL(c, dti, node, ...)						\
@@ -122,6 +144,14 @@ static void check_nodes_props(struct check *c, struct dt_info *dti, struct node 
 
 	for_each_child(node, child)
 		check_nodes_props(c, dti, child);
+}
+
+static bool is_multiple_of(int multiple, int divisor)
+{
+	if (divisor == 0)
+		return multiple == 0;
+	else
+		return (multiple % divisor) == 0;
 }
 
 static bool run_check(struct check *c, struct dt_info *dti)
@@ -180,7 +210,7 @@ static void check_is_string(struct check *c, struct dt_info *dti,
 			    struct node *node)
 {
 	struct property *prop;
-	char *propname = c->data;
+	const char *propname = c->data;
 
 	prop = get_property(node, propname);
 	if (!prop)
@@ -227,7 +257,7 @@ static void check_is_cell(struct check *c, struct dt_info *dti,
 			  struct node *node)
 {
 	struct property *prop;
-	char *propname = c->data;
+	const char *propname = c->data;
 
 	prop = get_property(node, propname);
 	if (!prop)
@@ -278,19 +308,20 @@ ERROR(duplicate_property_names, check_duplicate_property_names, NULL);
 #define LOWERCASE	"abcdefghijklmnopqrstuvwxyz"
 #define UPPERCASE	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #define DIGITS		"0123456789"
-#define PROPNODECHARS	LOWERCASE UPPERCASE DIGITS ",._+*#?-"
+#define NODECHARS	LOWERCASE UPPERCASE DIGITS ",._+-@"
+#define PROPCHARS	LOWERCASE UPPERCASE DIGITS ",._+*#?-"
 #define PROPNODECHARSSTRICT	LOWERCASE UPPERCASE DIGITS ",-"
 
 static void check_node_name_chars(struct check *c, struct dt_info *dti,
 				  struct node *node)
 {
-	int n = strspn(node->name, c->data);
+	size_t n = strspn(node->name, c->data);
 
 	if (n < strlen(node->name))
 		FAIL(c, dti, node, "Bad character '%c' in node name",
 		     node->name[n]);
 }
-ERROR(node_name_chars, check_node_name_chars, PROPNODECHARS "@");
+ERROR(node_name_chars, check_node_name_chars, NODECHARS);
 
 static void check_node_name_chars_strict(struct check *c, struct dt_info *dti,
 					 struct node *node)
@@ -310,6 +341,20 @@ static void check_node_name_format(struct check *c, struct dt_info *dti,
 		FAIL(c, dti, node, "multiple '@' characters in node name");
 }
 ERROR(node_name_format, check_node_name_format, NULL, &node_name_chars);
+
+static void check_node_name_vs_property_name(struct check *c,
+					     struct dt_info *dti,
+					     struct node *node)
+{
+	if (!node->parent)
+		return;
+
+	if (get_property(node->parent, node->name)) {
+		FAIL(c, dti, node, "node name and property name conflict");
+	}
+}
+WARNING(node_name_vs_property_name, check_node_name_vs_property_name,
+	NULL, &node_name_chars);
 
 static void check_unit_address_vs_reg(struct check *c, struct dt_info *dti,
 				      struct node *node)
@@ -344,14 +389,14 @@ static void check_property_name_chars(struct check *c, struct dt_info *dti,
 	struct property *prop;
 
 	for_each_property(node, prop) {
-		int n = strspn(prop->name, c->data);
+		size_t n = strspn(prop->name, c->data);
 
 		if (n < strlen(prop->name))
 			FAIL_PROP(c, dti, node, prop, "Bad character '%c' in property name",
 				  prop->name[n]);
 	}
 }
-ERROR(property_name_chars, check_property_name_chars, PROPNODECHARS);
+ERROR(property_name_chars, check_property_name_chars, PROPCHARS);
 
 static void check_property_name_chars_strict(struct check *c,
 					     struct dt_info *dti,
@@ -361,7 +406,7 @@ static void check_property_name_chars_strict(struct check *c,
 
 	for_each_property(node, prop) {
 		const char *name = prop->name;
-		int n = strspn(name, c->data);
+		size_t n = strspn(name, c->data);
 
 		if (n == strlen(prop->name))
 			continue;
@@ -537,7 +582,7 @@ static void check_name_properties(struct check *c, struct dt_info *dti,
 	if (!prop)
 		return; /* No name property, that's fine */
 
-	if ((prop->val.len != node->basenamelen+1)
+	if ((prop->val.len != node->basenamelen + 1U)
 	    || (memcmp(prop->val.val, node->name, node->basenamelen) != 0)) {
 		FAIL(c, dti, node, "\"name\" property is incorrect (\"%s\" instead"
 		     " of base node name)", prop->val.val);
@@ -636,7 +681,6 @@ ERROR(omit_unused_nodes, fixup_omit_unused_nodes, NULL, &phandle_references, &pa
  */
 WARNING_IF_NOT_CELL(address_cells_is_cell, "#address-cells");
 WARNING_IF_NOT_CELL(size_cells_is_cell, "#size-cells");
-WARNING_IF_NOT_CELL(interrupt_cells_is_cell, "#interrupt-cells");
 
 WARNING_IF_NOT_STRING(device_type_is_string, "device_type");
 WARNING_IF_NOT_STRING(model_is_string, "model");
@@ -739,8 +783,9 @@ static void check_ranges_format(struct check *c, struct dt_info *dti,
 {
 	struct property *prop;
 	int c_addr_cells, p_addr_cells, c_size_cells, p_size_cells, entrylen;
+	const char *ranges = c->data;
 
-	prop = get_property(node, "ranges");
+	prop = get_property(node, ranges);
 	if (!prop)
 		return;
 
@@ -773,7 +818,8 @@ static void check_ranges_format(struct check *c, struct dt_info *dti,
 			  p_addr_cells, c_addr_cells, c_size_cells);
 	}
 }
-WARNING(ranges_format, check_ranges_format, NULL, &addr_size_cells);
+WARNING(ranges_format, check_ranges_format, "ranges", &addr_size_cells);
+WARNING(dma_ranges_format, check_ranges_format, "dma-ranges", &addr_size_cells);
 
 static const struct bus_type pci_bus = {
 	.name = "PCI",
@@ -842,7 +888,7 @@ static void check_pci_device_bus_num(struct check *c, struct dt_info *dti, struc
 	} else {
 		cells = (cell_t *)prop->val.val;
 		min_bus = fdt32_to_cpu(cells[0]);
-		max_bus = fdt32_to_cpu(cells[0]);
+		max_bus = fdt32_to_cpu(cells[1]);
 	}
 	if ((bus_num < min_bus) || (bus_num > max_bus))
 		FAIL_PROP(c, dti, node, prop, "PCI bus number %d out of range, expected (%d - %d)",
@@ -865,7 +911,6 @@ static void check_pci_device_reg(struct check *c, struct dt_info *dti, struct no
 	if (!prop) {
 		FAIL(c, dti, node, "missing PCI reg property");
 		return;
-	}
 
 	cells = (cell_t *)prop->val.val;
 	if (cells[1] || cells[2])
@@ -921,7 +966,8 @@ static void check_simple_bus_bridge(struct check *c, struct dt_info *dti, struct
 	if (node_is_compatible(node, "simple-bus"))
 		node->bus = &simple_bus;
 }
-WARNING(simple_bus_bridge, check_simple_bus_bridge, NULL, &addr_size_cells);
+WARNING(simple_bus_bridge, check_simple_bus_bridge, NULL,
+	&addr_size_cells, &compatible_is_string_list);
 
 static void check_simple_bus_reg(struct check *c, struct dt_info *dti, struct node *node)
 {
@@ -961,6 +1007,160 @@ static void check_simple_bus_reg(struct check *c, struct dt_info *dti, struct no
 		     unit_addr);
 }
 WARNING(simple_bus_reg, check_simple_bus_reg, NULL, &reg_format, &simple_bus_bridge);
+
+static const struct bus_type i2c_bus = {
+	.name = "i2c-bus",
+};
+
+static void check_i2c_bus_bridge(struct check *c, struct dt_info *dti, struct node *node)
+{
+	if (strprefixeq(node->name, node->basenamelen, "i2c-bus") ||
+	    strprefixeq(node->name, node->basenamelen, "i2c-arb")) {
+		node->bus = &i2c_bus;
+	} else if (strprefixeq(node->name, node->basenamelen, "i2c")) {
+		struct node *child;
+		for_each_child(node, child) {
+			if (strprefixeq(child->name, node->basenamelen, "i2c-bus"))
+				return;
+		}
+		node->bus = &i2c_bus;
+	} else
+		return;
+
+	if (!node->children)
+		return;
+
+	if (node_addr_cells(node) != 1)
+		FAIL(c, dti, node, "incorrect #address-cells for I2C bus");
+	if (node_size_cells(node) != 0)
+		FAIL(c, dti, node, "incorrect #size-cells for I2C bus");
+
+}
+WARNING(i2c_bus_bridge, check_i2c_bus_bridge, NULL, &addr_size_cells);
+
+#define I2C_OWN_SLAVE_ADDRESS	(1U << 30)
+#define I2C_TEN_BIT_ADDRESS	(1U << 31)
+
+static void check_i2c_bus_reg(struct check *c, struct dt_info *dti, struct node *node)
+{
+	struct property *prop;
+	const char *unitname = get_unitname(node);
+	char unit_addr[17];
+	uint32_t reg = 0;
+	int len;
+	cell_t *cells = NULL;
+
+	if (!node->parent || (node->parent->bus != &i2c_bus))
+		return;
+
+	prop = get_property(node, "reg");
+	if (prop)
+		cells = (cell_t *)prop->val.val;
+
+	if (!cells) {
+		FAIL(c, dti, node, "missing or empty reg property");
+		return;
+	}
+
+	reg = fdt32_to_cpu(*cells);
+	/* Ignore I2C_OWN_SLAVE_ADDRESS */
+	reg &= ~I2C_OWN_SLAVE_ADDRESS;
+	snprintf(unit_addr, sizeof(unit_addr), "%x", reg);
+	if (!streq(unitname, unit_addr))
+		FAIL(c, dti, node, "I2C bus unit address format error, expected \"%s\"",
+		     unit_addr);
+
+	for (len = prop->val.len; len > 0; len -= 4) {
+		reg = fdt32_to_cpu(*(cells++));
+		/* Ignore I2C_OWN_SLAVE_ADDRESS */
+		reg &= ~I2C_OWN_SLAVE_ADDRESS;
+
+		if (reg & I2C_TEN_BIT_ADDRESS) {
+			if ((reg & ~I2C_TEN_BIT_ADDRESS) > 0x3ff)
+				FAIL_PROP(c, dti, node, prop, "I2C address must be less than 10-bits, got \"0x%x\"",
+				  reg);
+		} else if (reg > 0x7f)
+			FAIL_PROP(c, dti, node, prop, "I2C address must be less than 7-bits, got \"0x%x\". Set I2C_TEN_BIT_ADDRESS for 10 bit addresses or fix the property",
+				  reg);
+	}
+}
+WARNING(i2c_bus_reg, check_i2c_bus_reg, NULL, &reg_format, &i2c_bus_bridge);
+
+static const struct bus_type spi_bus = {
+	.name = "spi-bus",
+};
+
+static void check_spi_bus_bridge(struct check *c, struct dt_info *dti, struct node *node)
+{
+	int spi_addr_cells = 1;
+
+	if (strprefixeq(node->name, node->basenamelen, "spi")) {
+		node->bus = &spi_bus;
+	} else {
+		/* Try to detect SPI buses which don't have proper node name */
+		struct node *child;
+
+		if (node_addr_cells(node) != 1 || node_size_cells(node) != 0)
+			return;
+
+		for_each_child(node, child) {
+			struct property *prop;
+			for_each_property(child, prop) {
+				if (strstarts(prop->name, "spi-")) {
+					node->bus = &spi_bus;
+					break;
+				}
+			}
+			if (node->bus == &spi_bus)
+				break;
+		}
+
+		if (node->bus == &spi_bus && get_property(node, "reg"))
+			FAIL(c, dti, node, "node name for SPI buses should be 'spi'");
+	}
+	if (node->bus != &spi_bus || !node->children)
+		return;
+
+	if (get_property(node, "spi-slave"))
+		spi_addr_cells = 0;
+	if (node_addr_cells(node) != spi_addr_cells)
+		FAIL(c, dti, node, "incorrect #address-cells for SPI bus");
+	if (node_size_cells(node) != 0)
+		FAIL(c, dti, node, "incorrect #size-cells for SPI bus");
+
+}
+WARNING(spi_bus_bridge, check_spi_bus_bridge, NULL, &addr_size_cells);
+
+static void check_spi_bus_reg(struct check *c, struct dt_info *dti, struct node *node)
+{
+	struct property *prop;
+	const char *unitname = get_unitname(node);
+	char unit_addr[9];
+	uint32_t reg = 0;
+	cell_t *cells = NULL;
+
+	if (!node->parent || (node->parent->bus != &spi_bus))
+		return;
+
+	if (get_property(node->parent, "spi-slave"))
+		return;
+
+	prop = get_property(node, "reg");
+	if (prop)
+		cells = (cell_t *)prop->val.val;
+
+	if (!cells) {
+		FAIL(c, dti, node, "missing or empty reg property");
+		return;
+	}
+
+	reg = fdt32_to_cpu(*cells);
+	snprintf(unit_addr, sizeof(unit_addr), "%x", reg);
+	if (!streq(unitname, unit_addr))
+		FAIL(c, dti, node, "SPI bus unit address format error, expected \"%s\"",
+		     unit_addr);
+}
+WARNING(spi_bus_reg, check_spi_bus_reg, NULL, &reg_format, &spi_bus_bridge);
 
 static void check_unit_address_format(struct check *c, struct dt_info *dti,
 				      struct node *node)
@@ -1553,7 +1753,7 @@ WARNING(graph_endpoint, check_graph_endpoint, NULL, &graph_nodes);
 static struct check *check_table[] = {
 	&duplicate_node_names, &duplicate_property_names,
 	&node_name_chars, &node_name_format, &property_name_chars,
-	&name_is_string, &name_properties,
+	&name_is_string, &name_properties, &node_name_vs_property_name,
 
 	&duplicate_label,
 
@@ -1561,7 +1761,7 @@ static struct check *check_table[] = {
 	&phandle_references, &path_references,
 	&omit_unused_nodes,
 
-	&address_cells_is_cell, &size_cells_is_cell, &interrupt_cells_is_cell,
+	&address_cells_is_cell, &size_cells_is_cell,
 	&device_type_is_string, &model_is_string, &status_is_string,
 	&label_is_string,
 
@@ -1570,7 +1770,7 @@ static struct check *check_table[] = {
 	&property_name_chars_strict,
 	&node_name_chars_strict,
 
-	&addr_size_cells, &reg_format, &ranges_format,
+	&addr_size_cells, &reg_format, &ranges_format, &dma_ranges_format,
 
 	&unit_address_vs_reg,
 	&unit_address_format,
@@ -1581,6 +1781,12 @@ static struct check *check_table[] = {
 
 	&simple_bus_bridge,
 	&simple_bus_reg,
+
+	&i2c_bus_bridge,
+	&i2c_bus_reg,
+
+	&spi_bus_bridge,
+	&spi_bus_reg,
 
 	&avoid_default_addr_size,
 	&avoid_unnecessary_addr_size,
@@ -1631,7 +1837,7 @@ static void enable_warning_error(struct check *c, bool warn, bool error)
 
 static void disable_warning_error(struct check *c, bool warn, bool error)
 {
-	int i;
+	unsigned int i;
 
 	/* Lowering level, also lower it for things this is the prereq
 	 * for */
@@ -1652,7 +1858,7 @@ static void disable_warning_error(struct check *c, bool warn, bool error)
 
 void parse_checks_option(bool warn, bool error, const char *arg)
 {
-	int i;
+	unsigned int i;
 	const char *name = arg;
 	bool enable = true;
 
@@ -1679,7 +1885,7 @@ void parse_checks_option(bool warn, bool error, const char *arg)
 
 void process_checks(bool force, struct dt_info *dti)
 {
-	int i;
+	unsigned int i;
 	int error = 0;
 
 	for (i = 0; i < ARRAY_SIZE(check_table); i++) {

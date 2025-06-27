@@ -196,7 +196,7 @@ static void cpuidle_idle_call(void)
 		 */
 		next_state = cpuidle_select(drv, dev, &stop_tick);
 
-		if (stop_tick)
+		if (stop_tick || tick_nohz_tick_stopped())
 			tick_nohz_idle_stop_tick();
 		else
 			tick_nohz_idle_retain_tick();
@@ -229,6 +229,7 @@ exit_idle:
  */
 static void do_idle(void)
 {
+	int cpu = smp_processor_id();
 	/*
 	 * If the arch has a polling bit, we maintain an invariant:
 	 *
@@ -239,21 +240,22 @@ static void do_idle(void)
 	 */
 
 	__current_set_polling();
-	quiet_vmstat();
 	tick_nohz_idle_enter();
 
 	while (!need_resched()) {
 		check_pgt_cache();
-		rmb();
+		local_irq_disable();
 
-		if (cpu_is_offline(smp_processor_id())) {
-			tick_nohz_idle_stop_tick_protected();
+		if (cpu_is_offline(cpu)) {
+			tick_nohz_idle_stop_tick();
 			cpuhp_report_idle_dead();
 			arch_cpu_idle_dead();
+		} else {
+			cpuidle_set_idle_cpu(cpu);
 		}
 
-		local_irq_disable();
 		arch_cpu_idle_enter();
+		rcu_nocb_flush_deferred_wakeup();
 
 		/*
 		 * In poll mode we reenable interrupts and spin. Also if we
@@ -267,6 +269,7 @@ static void do_idle(void)
 		} else {
 			cpuidle_idle_call();
 		}
+		cpuidle_clear_idle_cpu(cpu);
 		arch_cpu_idle_exit();
 	}
 
@@ -288,6 +291,11 @@ static void do_idle(void)
 	 */
 	smp_mb__after_atomic();
 
+	/*
+	 * RCU relies on this call to be done outside of an RCU read-side
+	 * critical section.
+	 */
+	flush_smp_call_function_from_idle();
 	sched_ttwu_pending();
 	schedule_idle();
 

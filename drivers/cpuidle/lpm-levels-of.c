@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -666,10 +666,11 @@ struct lpm_cluster *parse_cluster(struct device_node *node,
 	if (ret)
 		return NULL;
 
+	INIT_LIST_HEAD(&c->list);
 	INIT_LIST_HEAD(&c->child);
 	INIT_LIST_HEAD(&c->cpu);
 	c->parent = parent;
-	spin_lock_init(&c->sync_lock);
+	raw_spin_lock_init(&c->sync_lock);
 	c->min_child_level = NR_LPM_LEVELS;
 
 	for_each_child_of_node(node, n) {
@@ -741,6 +742,12 @@ struct lpm_cluster *lpm_of_parse_cluster(struct platform_device *pdev)
 
 	lpm_pdev = pdev;
 	c = parse_cluster(top, NULL);
+
+	if (!c) {
+		pr_err("Failed to find cluster\n");
+		return ERR_PTR(-ENODEV);
+	}
+
 	of_node_put(top);
 	return c;
 }

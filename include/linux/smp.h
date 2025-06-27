@@ -53,7 +53,7 @@ void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
 		smp_call_func_t func, void *info, bool wait,
 		gfp_t gfp_flags);
 
-int smp_call_function_single_async(int cpu, call_single_data_t *csd);
+int smp_call_function_single_async(int cpu, struct __call_single_data *csd);
 
 #ifdef CONFIG_SMP
 
@@ -72,6 +72,11 @@ int smp_call_function_single_async(int cpu, call_single_data_t *csd);
  * stops all CPUs but the current one:
  */
 extern void smp_send_stop(void);
+
+/*
+ * sends an IPI event to the specified CPUs:
+ */
+extern void smp_send_ipi(const struct cpumask *cpus);
 
 /*
  * sends a 'reschedule' event to another CPU:
@@ -148,7 +153,7 @@ static inline int up_smp_call_function(smp_call_func_t func, void *info)
 			(up_smp_call_function(func, info))
 
 static inline void smp_send_reschedule(int cpu) { }
-#define smp_prepare_boot_cpu()			do {} while (0)
+#define smp_prepare_boot_cpu()			((void)0)
 #define smp_call_function_many(mask, func, info, wait) \
 			(up_smp_call_function(func, info))
 static inline void call_function_init(void) { }
@@ -201,6 +206,9 @@ static inline int get_boot_cpu_id(void)
 
 #define get_cpu()		({ preempt_disable(); smp_processor_id(); })
 #define put_cpu()		preempt_enable()
+
+#define get_cpu_light()		({ migrate_disable(); smp_processor_id(); })
+#define put_cpu_light()		migrate_enable()
 
 /*
  * Callback to arch code if there's nosmp or maxcpus=0 on the

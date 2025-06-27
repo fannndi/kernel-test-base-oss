@@ -711,7 +711,7 @@ static int sde_rotator_map_and_check_data(struct sde_rot_entry *entry)
 	int ret;
 	struct sde_layer_buffer *input;
 	struct sde_layer_buffer *output;
-	struct sde_mdp_format_params *in_fmt, *out_fmt;
+	const struct sde_mdp_format_params *in_fmt, *out_fmt;
 	struct sde_mdp_plane_sizes ps;
 	bool rotation;
 	bool secure;
@@ -1100,6 +1100,20 @@ static void sde_rotator_put_hw_resource(struct sde_rot_queue *queue,
 			entry->item.session_id, entry->item.sequence_id);
 }
 
+static void rotator_thread_priority_worker(struct kthread_work *work)
+{
+	int ret = 0;
+	struct sched_param param = { 0 };
+	struct task_struct *task = current->group_leader;
+
+	param.sched_priority = 5;
+	ret = sched_setscheduler(task, SCHED_FIFO, &param);
+	if (ret)
+		SDEROT_ERR(
+			"pid:%d name:%s priority update failed %d\n",
+			current->tgid, task->comm, ret);
+}
+
 /*
  * caller will need to call sde_rotator_deinit_queue when
  * the function returns error
@@ -1108,8 +1122,6 @@ static int sde_rotator_init_queue(struct sde_rot_mgr *mgr)
 {
 	int i, size, ret = 0;
 	char name[32];
-	struct sched_param param = { .sched_priority = 5 };
-
 	size = sizeof(struct sde_rot_queue) * mgr->queue_count;
 	mgr->commitq = devm_kzalloc(mgr->device, size, GFP_KERNEL);
 	if (!mgr->commitq)
@@ -1122,21 +1134,16 @@ static int sde_rotator_init_queue(struct sde_rot_mgr *mgr)
 		kthread_init_worker(&mgr->commitq[i].rot_kw);
 		mgr->commitq[i].rot_thread = kthread_run(kthread_worker_fn,
 				&mgr->commitq[i].rot_kw, name);
+		kthread_init_work(&mgr->thread_priority_work,
+				rotator_thread_priority_worker);
+		kthread_queue_work(&mgr->commitq[i].rot_kw,
+				&mgr->thread_priority_work);
+		kthread_flush_work(&mgr->thread_priority_work);
 		if (IS_ERR(mgr->commitq[i].rot_thread)) {
 			ret = -EPERM;
 			mgr->commitq[i].rot_thread = NULL;
 			break;
 		}
-
-		ret = sched_setscheduler(mgr->commitq[i].rot_thread,
-			SCHED_FIFO, &param);
-		if (ret) {
-			SDEROT_ERR(
-				"failed to set kthread priority for commitq %d\n",
-				ret);
-			break;
-		}
-
 		/* timeline not used */
 		mgr->commitq[i].timeline = NULL;
 	}
@@ -1153,21 +1160,16 @@ static int sde_rotator_init_queue(struct sde_rot_mgr *mgr)
 		kthread_init_worker(&mgr->doneq[i].rot_kw);
 		mgr->doneq[i].rot_thread = kthread_run(kthread_worker_fn,
 				&mgr->doneq[i].rot_kw, name);
+		kthread_init_work(&mgr->thread_priority_work,
+				rotator_thread_priority_worker);
+		kthread_queue_work(&mgr->doneq[i].rot_kw,
+				&mgr->thread_priority_work);
+		kthread_flush_work(&mgr->thread_priority_work);
 		if (IS_ERR(mgr->doneq[i].rot_thread)) {
 			ret = -EPERM;
 			mgr->doneq[i].rot_thread = NULL;
 			break;
 		}
-
-		ret = sched_setscheduler(mgr->doneq[i].rot_thread,
-			SCHED_FIFO, &param);
-		if (ret) {
-			SDEROT_ERR(
-				"failed to set kthread priority for doneq %d\n",
-				ret);
-			break;
-		}
-
 		/* timeline not used */
 		mgr->doneq[i].timeline = NULL;
 	}
@@ -1323,7 +1325,7 @@ void sde_rotator_queue_request(struct sde_rot_mgr *mgr,
 	}
 }
 
-static u32 sde_rotator_calc_buf_bw(struct sde_mdp_format_params *fmt,
+static u32 sde_rotator_calc_buf_bw(const struct sde_mdp_format_params *fmt,
 		uint32_t width, uint32_t height, uint32_t frame_rate)
 {
 	u32 bw;
@@ -1364,7 +1366,7 @@ static int sde_rotator_calc_perf(struct sde_rot_mgr *mgr,
 {
 	struct sde_rotation_config *config = &perf->config;
 	u32 read_bw, write_bw;
-	struct sde_mdp_format_params *in_fmt, *out_fmt;
+	const struct sde_mdp_format_params *in_fmt, *out_fmt;
 	struct sde_rotator_device *rot_dev;
 	int max_fps;
 
@@ -1763,8 +1765,8 @@ static void sde_rotator_done_handler(struct kthread_work *work)
 }
 
 static bool sde_rotator_verify_format(struct sde_rot_mgr *mgr,
-	struct sde_mdp_format_params *in_fmt,
-	struct sde_mdp_format_params *out_fmt, bool rotation, u32 mode)
+	const struct sde_mdp_format_params *in_fmt,
+	const struct sde_mdp_format_params *out_fmt, bool rotation, u32 mode)
 {
 	u8 in_v_subsample, in_h_subsample;
 	u8 out_v_subsample, out_h_subsample;
@@ -1833,11 +1835,11 @@ verify_error:
 	return false;
 }
 
-static struct sde_mdp_format_params *__verify_input_config(
+static const struct sde_mdp_format_params *__verify_input_config(
 		struct sde_rot_mgr *mgr,
 		struct sde_rotation_config *config)
 {
-	struct sde_mdp_format_params *in_fmt;
+	const struct sde_mdp_format_params *in_fmt;
 	u8 in_v_subsample, in_h_subsample;
 	u32 input;
 	int verify_input_only;
@@ -1876,11 +1878,11 @@ static struct sde_mdp_format_params *__verify_input_config(
 	return in_fmt;
 }
 
-static struct sde_mdp_format_params *__verify_output_config(
+static const struct sde_mdp_format_params *__verify_output_config(
 		struct sde_rot_mgr *mgr,
 		struct sde_rotation_config *config)
 {
-	struct sde_mdp_format_params *out_fmt;
+	const struct sde_mdp_format_params *out_fmt;
 	u8 out_v_subsample, out_h_subsample;
 	u32 output;
 	int verify_input_only;
@@ -1922,7 +1924,7 @@ static struct sde_mdp_format_params *__verify_output_config(
 int sde_rotator_verify_config_input(struct sde_rot_mgr *mgr,
 		struct sde_rotation_config *config)
 {
-	struct sde_mdp_format_params *in_fmt;
+	const struct sde_mdp_format_params *in_fmt;
 
 	in_fmt = __verify_input_config(mgr, config);
 	if (!in_fmt)
@@ -1934,7 +1936,7 @@ int sde_rotator_verify_config_input(struct sde_rot_mgr *mgr,
 int sde_rotator_verify_config_output(struct sde_rot_mgr *mgr,
 		struct sde_rotation_config *config)
 {
-	struct sde_mdp_format_params *out_fmt;
+	const struct sde_mdp_format_params *out_fmt;
 
 	out_fmt = __verify_output_config(mgr, config);
 	if (!out_fmt)
@@ -1946,7 +1948,7 @@ int sde_rotator_verify_config_output(struct sde_rot_mgr *mgr,
 int sde_rotator_verify_config_all(struct sde_rot_mgr *mgr,
 	struct sde_rotation_config *config)
 {
-	struct sde_mdp_format_params *in_fmt, *out_fmt;
+	const struct sde_mdp_format_params *in_fmt, *out_fmt;
 	bool rotation;
 	u32 mode;
 
@@ -2004,7 +2006,7 @@ static int sde_rotator_validate_item_matches_session(
 /* Only need to validate x and y offset for ubwc dst fmt */
 static int sde_rotator_validate_img_roi(struct sde_rotation_item *item)
 {
-	struct sde_mdp_format_params *fmt;
+	const struct sde_mdp_format_params *fmt;
 	int ret = 0;
 
 	fmt = sde_get_format_params(item->output.format);
@@ -2024,7 +2026,7 @@ static int sde_rotator_validate_img_roi(struct sde_rotation_item *item)
 static int sde_rotator_validate_fmt_and_item_flags(
 	struct sde_rotation_config *config, struct sde_rotation_item *item)
 {
-	struct sde_mdp_format_params *fmt;
+	const struct sde_mdp_format_params *fmt;
 
 	fmt = sde_get_format_params(item->input.format);
 	if ((item->flags & SDE_ROTATION_DEINTERLACE) &&
@@ -3173,16 +3175,19 @@ int sde_rotator_core_init(struct sde_rot_mgr **pmgr,
 		mgr->ops_hw_init = sde_rotator_r3_init;
 		mgr->min_rot_clk = ROT_MIN_ROT_CLK;
 
-		/*
-		 * on platforms where the maxlinewidth is greater than
-		 * default we need to have a max clock rate check to
-		 * ensure we do not cross the max allowed clock for rotator
-		 */
-		if (IS_SDE_MAJOR_SAME(mdata->mdss_version,
-			SDE_MDP_HW_REV_500) ||
+		if (IS_SDE_MAJOR_MINOR_SAME(mdata->mdss_version,
+				SDE_MDP_HW_REV_500) ||
+		IS_SDE_MAJOR_MINOR_SAME(mdata->mdss_version,
+				SDE_MDP_HW_REV_620))
+			mgr->max_rot_clk = 460000000UL;
+		else if (IS_SDE_MAJOR_MINOR_SAME(mdata->mdss_version,
+					SDE_MDP_HW_REV_520))
+			mgr->max_rot_clk = 430000000UL;
+		else if (IS_SDE_MAJOR_MINOR_SAME(mdata->mdss_version,
+				SDE_MDP_HW_REV_530) ||
 			IS_SDE_MAJOR_MINOR_SAME(mdata->mdss_version,
-			SDE_MDP_HW_REV_620))
-			mgr->max_rot_clk = ROT_R3_MAX_ROT_CLK;
+				SDE_MDP_HW_REV_540))
+			mgr->max_rot_clk = 307200000UL;
 
 		if (!(IS_SDE_MAJOR_SAME(mdata->mdss_version,
 					SDE_MDP_HW_REV_500) ||
@@ -3206,8 +3211,6 @@ int sde_rotator_core_init(struct sde_rot_mgr **pmgr,
 		SDEROT_ERR("hw init failed %d\n", ret);
 		goto error_hw_init;
 	}
-
-	sde_rotator_pm_qos_add(mdata);
 
 	ret = sde_rotator_init_queue(mgr);
 	if (ret) {

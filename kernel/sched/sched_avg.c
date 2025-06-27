@@ -35,7 +35,7 @@ static s64 last_get_time;
 
 static DEFINE_PER_CPU(atomic64_t, last_busy_time) = ATOMIC64_INIT(0);
 
-#define NR_THRESHOLD_PCT		15
+#define NR_THRESHOLD_PCT		40
 
 /**
  * sched_get_nr_running_avg
@@ -176,13 +176,10 @@ unsigned int sched_get_cpu_util(int cpu)
 	util = rq->cfs.avg.util_avg;
 	capacity = capacity_orig_of(cpu);
 
-#ifdef CONFIG_SCHED_WALT
-	if (!walt_disabled && sysctl_sched_use_walt_cpu_util) {
-		util = rq->prev_runnable_sum + rq->grp_time.prev_runnable_sum;
-		util = div64_u64(util,
-				 sched_ravg_window >> SCHED_CAPACITY_SHIFT);
-	}
-#endif
+	util = rq->prev_runnable_sum + rq->grp_time.prev_runnable_sum;
+	util = div64_u64(util,
+			 sched_ravg_window >> SCHED_CAPACITY_SHIFT);
+
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
 	util = (util >= capacity) ? capacity : util;

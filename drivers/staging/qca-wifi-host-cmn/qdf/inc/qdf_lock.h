@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -54,15 +54,15 @@
 
 #if !QDF_LOCK_STATS
 struct lock_stats {};
-#define BEFORE_LOCK(x...) do {} while (0)
-#define AFTER_LOCK(x...) do {} while (0)
-#define BEFORE_TRYLOCK(x...) do {} while (0)
-#define AFTER_TRYLOCK(x...) do {} while (0)
-#define BEFORE_UNLOCK(x...) do {} while (0)
-#define qdf_lock_stats_create(x...) do {} while (0)
-#define qdf_lock_stats_destroy(x...) do {} while (0)
-#define qdf_lock_stats_init(x...) do {} while (0)
-#define qdf_lock_stats_deinit(x...) do {} while (0)
+#define BEFORE_LOCK(x...) ((void)0)
+#define AFTER_LOCK(x...) ((void)0)
+#define BEFORE_TRYLOCK(x...) ((void)0)
+#define AFTER_TRYLOCK(x...) ((void)0)
+#define BEFORE_UNLOCK(x...) ((void)0)
+#define qdf_lock_stats_create(x...) ((void)0)
+#define qdf_lock_stats_destroy(x...) ((void)0)
+#define qdf_lock_stats_init(x...) ((void)0)
+#define qdf_lock_stats_deinit(x...) ((void)0)
 #else
 void qdf_lock_stats_init(void);
 void qdf_lock_stats_deinit(void);
@@ -90,13 +90,13 @@ do { \
 	uint64_t BEFORE_LOCK_time; \
 	uint64_t AFTER_LOCK_time;  \
 	bool BEFORE_LOCK_is_locked = was_locked; \
-	BEFORE_LOCK_time = qdf_get_log_timestamp(); \
-	do {} while (0)
+	BEFORE_LOCK_time = qdf_get_log_timestamp_lightweight(); \
+	((void)0)
 
 
 #define AFTER_LOCK(lock, func) \
 	lock->stats.acquired_by = func; \
-	AFTER_LOCK_time = qdf_get_log_timestamp(); \
+	AFTER_LOCK_time = qdf_get_log_timestamp_lightweight(); \
 	lock->stats.acquired++; \
 	lock->stats.last_acquired = AFTER_LOCK_time; \
 	if (BEFORE_LOCK_is_locked) { \
@@ -121,11 +121,11 @@ do { \
 do { \
 	uint64_t BEFORE_LOCK_time; \
 	uint64_t AFTER_LOCK_time;  \
-	BEFORE_LOCK_time = qdf_get_log_timestamp(); \
-	do {} while (0)
+	BEFORE_LOCK_time = qdf_get_log_timestamp_lightweight(); \
+	((void)0)
 
 #define AFTER_TRYLOCK(lock, trylock_return, func) \
-	AFTER_LOCK_time = qdf_get_log_timestamp(); \
+	AFTER_LOCK_time = qdf_get_log_timestamp_lightweight(); \
 	if (trylock_return) { \
 		lock->stats.acquired++; \
 		lock->stats.last_acquired = AFTER_LOCK_time; \
@@ -138,8 +138,15 @@ do { \
 /* max_hold_time in US */
 #define BEFORE_UNLOCK(lock, max_hold_time) \
 do {\
-	uint64_t held_time = qdf_get_log_timestamp() - \
-		lock->stats.last_acquired; \
+	uint64_t BEFORE_UNLOCK_time;  \
+	uint64_t held_time;  \
+	BEFORE_UNLOCK_time = qdf_get_log_timestamp_lightweight(); \
+\
+	if (unlikely(BEFORE_UNLOCK_time < lock->stats.last_acquired)) \
+		held_time = 0; \
+	else \
+		held_time = BEFORE_UNLOCK_time - lock->stats.last_acquired; \
+\
 	lock->stats.held_time += held_time; \
 \
 	if (held_time > lock->stats.max_held_time) \

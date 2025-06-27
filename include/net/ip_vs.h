@@ -262,12 +262,12 @@ static inline const char *ip_vs_dbg_addr(int af, char *buf, size_t buf_len,
 			pp->debug_packet(af, pp, skb, ofs, msg);	\
 	} while (0)
 #else	/* NO DEBUGGING at ALL */
-#define IP_VS_DBG_BUF(level, msg...)  do {} while (0)
-#define IP_VS_ERR_BUF(msg...)  do {} while (0)
-#define IP_VS_DBG(level, msg...)  do {} while (0)
-#define IP_VS_DBG_RL(msg...)  do {} while (0)
-#define IP_VS_DBG_PKT(level, af, pp, skb, ofs, msg)	do {} while (0)
-#define IP_VS_DBG_RL_PKT(level, af, pp, skb, ofs, msg)	do {} while (0)
+#define IP_VS_DBG_BUF(level, msg...)  ((void)0)
+#define IP_VS_ERR_BUF(msg...)  ((void)0)
+#define IP_VS_DBG(level, msg...)  ((void)0)
+#define IP_VS_DBG_RL(msg...)  ((void)0)
+#define IP_VS_DBG_PKT(level, af, pp, skb, ofs, msg)	((void)0)
+#define IP_VS_DBG_RL_PKT(level, af, pp, skb, ofs, msg)	((void)0)
 #endif
 
 #define IP_VS_BUG() BUG()
@@ -293,8 +293,8 @@ static inline const char *ip_vs_dbg_addr(int af, char *buf, size_t buf_len,
 			       __func__, __FILE__, __LINE__);		\
 	} while (0)
 #else
-#define EnterFunction(level)   do {} while (0)
-#define LeaveFunction(level)   do {} while (0)
+#define EnterFunction(level)   ((void)0)
+#define LeaveFunction(level)   ((void)0)
 #endif
 
 /* The port number of FTP service (in network order). */
@@ -1607,18 +1607,16 @@ static inline void ip_vs_conn_drop_conntrack(struct ip_vs_conn *cp)
 }
 #endif /* CONFIG_IP_VS_NFCT */
 
-/* Really using conntrack? */
-static inline bool ip_vs_conn_uses_conntrack(struct ip_vs_conn *cp,
-					     struct sk_buff *skb)
+/* Using old conntrack that can not be redirected to another real server? */
+static inline bool ip_vs_conn_uses_old_conntrack(struct ip_vs_conn *cp,
+						 struct sk_buff *skb)
 {
 #ifdef CONFIG_IP_VS_NFCT
 	enum ip_conntrack_info ctinfo;
 	struct nf_conn *ct;
 
-	if (!(cp->flags & IP_VS_CONN_F_NFCT))
-		return false;
 	ct = nf_ct_get(skb, &ctinfo);
-	if (ct)
+	if (ct && nf_ct_is_confirmed(ct))
 		return true;
 #endif
 	return false;

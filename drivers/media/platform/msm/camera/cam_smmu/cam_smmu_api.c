@@ -175,6 +175,8 @@ struct cam_dma_buff_info {
 
 struct cam_sec_buff_info {
 	struct dma_buf *buf;
+	struct dma_buf_attachment *attach;
+	struct sg_table *table;
 	enum dma_data_direction dir;
 	int ref_count;
 	dma_addr_t paddr;
@@ -226,7 +228,8 @@ static struct cam_dma_buff_info *cam_smmu_find_mapping_by_virt_address(int idx,
 
 static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	enum dma_data_direction dma_dir, dma_addr_t *paddr_ptr,
-	size_t *len_ptr, enum cam_smmu_region_id region_id);
+	size_t *len_ptr, enum cam_smmu_region_id region_id,
+	struct dma_buf *buf);
 
 static int cam_smmu_map_kernel_buffer_and_add_to_list(int idx,
 	struct dma_buf *buf, enum dma_data_direction dma_dir,
@@ -1704,7 +1707,7 @@ static int cam_smmu_map_buffer_validate(struct dma_buf *buf,
 	if (IS_ERR_OR_NULL(attach)) {
 		rc = PTR_ERR(attach);
 		CAM_ERR(CAM_SMMU, "Error: dma buf attach failed");
-		goto err_put;
+		goto err_out;
 	}
 
 	if (region_id == CAM_SMMU_REGION_SHARED) {
@@ -1830,8 +1833,6 @@ err_unmap_sg:
 	dma_buf_unmap_attachment(attach, table, dma_dir);
 err_detach:
 	dma_buf_detach(buf, attach);
-err_put:
-	dma_buf_put(buf);
 err_out:
 	return rc;
 }
@@ -1839,14 +1840,11 @@ err_out:
 
 static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	 enum dma_data_direction dma_dir, dma_addr_t *paddr_ptr,
-	 size_t *len_ptr, enum cam_smmu_region_id region_id)
+	 size_t *len_ptr, enum cam_smmu_region_id region_id,
+	 struct dma_buf *buf)
 {
 	int rc = -1;
 	struct cam_dma_buff_info *mapping_info = NULL;
-	struct dma_buf *buf = NULL;
-
-	/* returns the dma_buf structure related to an fd */
-	buf = dma_buf_get(ion_fd);
 
 	rc = cam_smmu_map_buffer_validate(buf, idx, dma_dir, paddr_ptr, len_ptr,
 		region_id, &mapping_info);
@@ -1942,7 +1940,6 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 	dma_buf_unmap_attachment(mapping_info->attach,
 		mapping_info->table, mapping_info->dir);
 	dma_buf_detach(mapping_info->buf, mapping_info->attach);
-	dma_buf_put(mapping_info->buf);
 
 	mapping_info->buf = NULL;
 
@@ -2410,10 +2407,9 @@ handle_err:
 
 static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 		 enum dma_data_direction dma_dir, dma_addr_t *paddr_ptr,
-		 size_t *len_ptr)
+		 size_t *len_ptr, struct dma_buf *dmabuf)
 {
 	int rc = 0;
-	struct dma_buf *dmabuf = NULL;
 	struct dma_buf_attachment *attach = NULL;
 	struct sg_table *table = NULL;
 	struct cam_sec_buff_info *mapping_info;
@@ -2421,15 +2417,6 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 	/* clean the content from clients */
 	*paddr_ptr = (dma_addr_t)NULL;
 	*len_ptr = (size_t)0;
-
-	dmabuf = dma_buf_get(ion_fd);
-	if (IS_ERR_OR_NULL((void *)(dmabuf))) {
-		CAM_ERR(CAM_SMMU,
-			"Error: dma buf get failed, idx=%d, ion_fd=%d",
-			idx, ion_fd);
-		rc = PTR_ERR(dmabuf);
-		goto err_out;
-	}
 
 	/*
 	 * ion_phys() is deprecated. call dma_buf_attach() and
@@ -2442,7 +2429,7 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 			"Error: dma buf attach failed, idx=%d, ion_fd=%d",
 			idx, ion_fd);
 		rc = PTR_ERR(attach);
-		goto err_put;
+		goto err_out;
 	}
 
 	attach->dma_map_attrs |= DMA_ATTR_SKIP_CPU_SYNC;
@@ -2471,6 +2458,8 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 	mapping_info->dir = dma_dir;
 	mapping_info->ref_count = 1;
 	mapping_info->buf = dmabuf;
+	mapping_info->attach = attach;
+	mapping_info->table = table;
 
 	CAM_DBG(CAM_SMMU, "idx=%d, ion_fd=%d, dev=%pK, paddr=%pK, len=%u",
 			idx, ion_fd,
@@ -2480,20 +2469,16 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 	/* add to the list */
 	list_add(&mapping_info->list, &iommu_cb_set.cb_info[idx].smmu_buf_list);
 
-	return 0;
-
 err_unmap_sg:
 	dma_buf_unmap_attachment(attach, table, dma_dir);
 err_detach:
 	dma_buf_detach(dmabuf, attach);
-err_put:
-	dma_buf_put(dmabuf);
 err_out:
 	return rc;
 }
 
-int cam_smmu_map_stage2_iova(int handle,
-		int ion_fd, enum cam_smmu_map_dir dir,
+int cam_smmu_map_stage2_iova(int handle, int ion_fd,
+		struct dma_buf *dmabuf, enum cam_smmu_map_dir dir,
 		dma_addr_t *paddr_ptr, size_t *len_ptr)
 {
 	int idx, rc;
@@ -2553,7 +2538,7 @@ int cam_smmu_map_stage2_iova(int handle,
 		goto get_addr_end;
 	}
 	rc = cam_smmu_map_stage2_buffer_and_add_to_list(idx, ion_fd, dma_dir,
-			paddr_ptr, len_ptr);
+			paddr_ptr, len_ptr, dmabuf);
 	if (rc < 0) {
 		CAM_ERR(CAM_SMMU,
 			"Error: mapping or add list fail, idx=%d, handle=%d, fd=%d, rc=%d",
@@ -2575,7 +2560,27 @@ static int cam_smmu_secure_unmap_buf_and_remove_from_list(
 		CAM_ERR(CAM_SMMU, "Error: List doesn't exist");
 		return -EINVAL;
 	}
-	dma_buf_put(mapping_info->buf);
+	if ((!mapping_info->buf) || (!mapping_info->table) ||
+	    (!mapping_info->attach)) {
+		CAM_ERR(CAM_SMMU,
+			"Error: Invalid params dev = %pK, table = %pK",
+			(void *)iommu_cb_set.cb_info[idx].dev,
+			(void *)mapping_info->table);
+		CAM_ERR(CAM_SMMU, "Error: buf = %pK, attach = %pK\n",
+			(void *)mapping_info->buf,
+			(void *)mapping_info->attach);
+		return -EINVAL;
+	}
+
+	/* skip cache operations */
+	mapping_info->attach->dma_map_attrs |= DMA_ATTR_SKIP_CPU_SYNC;
+
+	/* iommu buffer clean up */
+	dma_buf_unmap_attachment(mapping_info->attach, mapping_info->table,
+				 mapping_info->dir);
+	dma_buf_detach(mapping_info->buf, mapping_info->attach);
+	mapping_info->buf = NULL;
+
 	list_del_init(&mapping_info->list);
 
 	CAM_DBG(CAM_SMMU, "unmap fd: %d, idx : %d", mapping_info->ion_fd, idx);
@@ -2688,7 +2693,7 @@ static int cam_smmu_map_iova_validate_params(int handle,
 	return rc;
 }
 
-int cam_smmu_map_user_iova(int handle, int ion_fd,
+int cam_smmu_map_user_iova(int handle, int ion_fd, struct dma_buf *dmabuf,
 	enum cam_smmu_map_dir dir, dma_addr_t *paddr_ptr,
 	size_t *len_ptr, enum cam_smmu_region_id region_id)
 {
@@ -2740,7 +2745,7 @@ int cam_smmu_map_user_iova(int handle, int ion_fd,
 	}
 
 	rc = cam_smmu_map_buffer_and_add_to_list(idx, ion_fd, dma_dir,
-			paddr_ptr, len_ptr, region_id);
+			paddr_ptr, len_ptr, region_id, dmabuf);
 	if (rc < 0)
 		CAM_ERR(CAM_SMMU,
 			"mapping or add list fail, idx=%d, fd=%d, region=%d, rc=%d",
@@ -3256,7 +3261,7 @@ static int cam_smmu_setup_cb(struct cam_context_bank_info *cb,
 			goto end;
 		}
 
-		iommu_cb_set.non_fatal_fault = smmu_fatal_flag;
+		iommu_cb_set.non_fatal_fault = !smmu_fatal_flag;
 		if (iommu_domain_set_attr(cb->mapping->domain,
 			DOMAIN_ATTR_NON_FATAL_FAULTS,
 			&iommu_cb_set.non_fatal_fault) < 0) {

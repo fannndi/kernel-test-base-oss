@@ -228,9 +228,6 @@ struct hdac_io_ops {
 #define HDA_UNSOL_QUEUE_SIZE	64
 #define HDA_MAX_CODECS		8	/* limit by controller side */
 
-/* HD Audio class code */
-#define PCI_CLASS_MULTIMEDIA_HD_AUDIO	0x0403
-
 /*
  * CORB/RIRB
  *
@@ -529,9 +526,9 @@ void snd_hdac_dsp_trigger(struct hdac_stream *azx_dev, bool start);
 void snd_hdac_dsp_cleanup(struct hdac_stream *azx_dev,
 			  struct snd_dma_buffer *dmab);
 #else /* CONFIG_SND_HDA_DSP_LOADER */
-#define snd_hdac_dsp_lock_init(dev)	do {} while (0)
-#define snd_hdac_dsp_lock(dev)		do {} while (0)
-#define snd_hdac_dsp_unlock(dev)	do {} while (0)
+#define snd_hdac_dsp_lock_init(dev)	((void)0)
+#define snd_hdac_dsp_lock(dev)		((void)0)
+#define snd_hdac_dsp_unlock(dev)	((void)0)
 #define snd_hdac_stream_is_locked(dev)	0
 
 static inline int

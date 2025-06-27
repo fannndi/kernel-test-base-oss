@@ -59,6 +59,7 @@ struct npu_network {
 	atomic_t ref_cnt;
 	bool is_valid;
 	bool is_active;
+	bool is_unloading;
 	bool fw_error;
 	bool cmd_pending;
 	bool cmd_async;
@@ -80,7 +81,6 @@ struct npu_host_ctx {
 	int32_t fw_ref_cnt;
 	int32_t npu_init_cnt;
 	int32_t power_vote_num;
-	struct work_struct irq_work;
 	struct delayed_work fw_deinit_work;
 	atomic_t fw_deinit_work_cnt;
 	struct workqueue_struct *wq;

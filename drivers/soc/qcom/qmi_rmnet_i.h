@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2021-2022, Qualcomm Innovation Center, Inc. All rights reserved.
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -22,6 +22,7 @@
 #define MAX_CLIENT_NUM 2
 #define MAX_FLOW_NUM 32
 #define DEFAULT_GRANT 1
+#define DEFAULT_CALL_GRANT 20480
 #define DFC_MAX_BEARERS_V01 16
 #define DEFAULT_MQ_NUM 0
 #define ACK_MQ_OFFSET (MAX_MQ_NUM - 1)
@@ -79,6 +80,7 @@ struct svc_info {
 
 struct mq_map {
 	struct rmnet_bearer_map *bearer;
+	bool drop_on_remove;
 };
 
 struct qos_info {

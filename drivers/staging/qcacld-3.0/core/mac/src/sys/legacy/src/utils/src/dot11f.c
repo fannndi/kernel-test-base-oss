@@ -14599,7 +14599,7 @@ static uint32_t unpack_core(tpAniSirGlobal pCtx,
 						    pCtx, pBufRemaining, len,
 						    (tDot11fIEesp_information *)
 						    (pFrm + pIe->offset +
-						    sizeof(tDot11fIEesp_information) *
+						    sizeof(tDot11fIEWMMCaps) *
 						    countOffset),
 						    append_ie);
 					break;
@@ -14608,6 +14608,186 @@ static uint32_t unpack_core(tpAniSirGlobal pCtx,
 						dot11f_unpack_ie_ext_chan_switch_ann(
 						    pCtx, pBufRemaining, len,
 						    (tDot11fIEext_chan_switch_ann *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWMMInfoAp) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_assoc_delay_info:
+					status |=
+						dot11f_unpack_ie_fils_assoc_delay_info(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_assoc_delay_info *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWMMInfoStation) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_hlp_container:
+					status |=
+						dot11f_unpack_ie_fils_hlp_container(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_hlp_container *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWMMParams) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_indication:
+					status |=
+						dot11f_unpack_ie_fils_indication(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_indication *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWPA) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_kde:
+					status |=
+						dot11f_unpack_ie_fils_kde(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_kde *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWPAOpaque) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_key_confirmation:
+					status |=
+						dot11f_unpack_ie_fils_key_confirmation(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_key_confirmation *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWSC) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_nonce:
+					status |=
+						dot11f_unpack_ie_fils_nonce(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_nonce *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscAssocReq) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_public_key:
+					status |=
+						dot11f_unpack_ie_fils_public_key(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_public_key *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscAssocRes) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_session:
+					status |=
+						dot11f_unpack_ie_fils_session(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_session *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscBeacon) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefils_wrapped_data:
+					status |=
+						dot11f_unpack_ie_fils_wrapped_data(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfils_wrapped_data *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscBeaconProbeRes) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIefragment_ie:
+					status |=
+						dot11f_unpack_ie_fragment_ie(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEfragment_ie *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscIEOpaque) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIehe_6ghz_band_cap:
+					status |=
+						dot11f_unpack_ie_he_6ghz_band_cap(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEhe_6ghz_band_cap *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscProbeReq) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIehe_cap:
+					status |=
+						dot11f_unpack_ie_he_cap(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEhe_cap *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscProbeRes) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIehe_op:
+					status |=
+						dot11f_unpack_ie_he_op(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEhe_op *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEWscReassocRes) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIeaddba_extn_element:
+					status |=
+						dot11f_unpack_ie_addba_extn_element(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEaddba_extn_element *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEaddba_extn_element) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIebss_color_change:
+					status |=
+						dot11f_unpack_ie_bss_color_change(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEbss_color_change *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEbss_color_change) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIedh_parameter_element:
+					status |=
+						dot11f_unpack_ie_dh_parameter_element(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEdh_parameter_element *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEdh_parameter_element) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIeesp_information:
+					status |=
+						dot11f_unpack_ie_esp_information(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEesp_information *)
+						    (pFrm + pIe->offset +
+						    sizeof(tDot11fIEesp_information) *
+						    countOffset),
+						    append_ie);
+					break;
+				case SigIehs20vendor_ie:
+					status |=
+						dot11f_unpack_ie_hs20vendor_ie(
+						    pCtx, pBufRemaining, len,
+						    (tDot11fIEhs20vendor_ie *)
 						    (pFrm + pIe->offset +
 						    sizeof(tDot11fIEext_chan_switch_ann) *
 						    countOffset),
@@ -14933,25 +15113,30 @@ static uint32_t unpack_tlv_core(tpAniSirGlobal   pCtx,
 			}
 			/* & length, */
 			if (pTlv->sLen == 2) {
-				framesntohs(pCtx, &len, pBufRemaining, pTlv->fMsb);
 				if (2 > nBufRemaining) {
 					FRAMES_LOG0(pCtx, FRLOGE, FRFL("This frame reports "
 							"fewer two byte(s) remaining.\n"));
 					status |= DOT11F_INCOMPLETE_TLV;
 					FRAMES_DBG_BREAK();
 					goto MandatoryCheck;
-			}
-			pBufRemaining += 2;
-			nBufRemaining -= 2;
+				}
+				framesntohs(pCtx, &len, pBufRemaining, pTlv->fMsb);
+				pBufRemaining += 2;
+				nBufRemaining -= 2;
 			} else {
 				len = *pBufRemaining;
 				pBufRemaining += 1;
 				nBufRemaining -= 1;
 			}
 		} else {
+			if (TLVs[0].sType > nBufRemaining) {
+				FRAMES_LOG0(pCtx, FRLOGE, FRFL("This frame reports "
+					     "fewer LVs[0].sType byte(s) remaining.\n"));
+				status |= DOT11F_INCOMPLETE_TLV;
+				goto MandatoryCheck;
+			}
 			pBufRemaining += TLVs[0].sType;
 			nBufRemaining -= TLVs[0].sType;
-			framesntohs(pCtx, &len, pBufRemaining, (TLVs[0].sType == 2));
 			if (2 > nBufRemaining) {
 				FRAMES_LOG0(pCtx, FRLOGE, FRFL("This frame reports "
 					     "fewer two byte(s) remaining.\n"));
@@ -14959,6 +15144,7 @@ static uint32_t unpack_tlv_core(tpAniSirGlobal   pCtx,
 				FRAMES_DBG_BREAK();
 				goto MandatoryCheck;
 			}
+			framesntohs(pCtx, &len, pBufRemaining, (TLVs[0].sType == 2));
 			pBufRemaining += 2;
 			nBufRemaining -= 2;
 		}

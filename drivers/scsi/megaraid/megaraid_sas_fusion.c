@@ -1594,7 +1594,7 @@ megasas_is_prp_possible(struct megasas_instance *instance,
  * then sending IOs with holes.
  *
  * Though driver can request block layer to disable IO merging by calling-
- * queue_flag_set_unlocked(QUEUE_FLAG_NOMERGES, sdev->request_queue) but
+ * blk_queue_flag_set(QUEUE_FLAG_NOMERGES, sdev->request_queue) but
  * user may tune sysfs parameter- nomerges again to 0 or 1.
  *
  * If in future IO scheduling is enabled with SCSI BLK MQ,
@@ -4019,7 +4019,7 @@ int megasas_task_abort_fusion(struct scsi_cmnd *scmd)
 	devhandle = megasas_get_tm_devhandle(scmd->device);
 
 	if (devhandle == (u16)ULONG_MAX) {
-		ret = SUCCESS;
+		ret = FAILED;
 		sdev_printk(KERN_INFO, scmd->device,
 			"task abort issued for invalid devhandle\n");
 		mutex_unlock(&instance->reset_mutex);
@@ -4091,7 +4091,7 @@ int megasas_reset_target_fusion(struct scsi_cmnd *scmd)
 	devhandle = megasas_get_tm_devhandle(scmd->device);
 
 	if (devhandle == (u16)ULONG_MAX) {
-		ret = SUCCESS;
+		ret = FAILED;
 		sdev_printk(KERN_INFO, scmd->device,
 			"target reset issued for invalid devhandle\n");
 		mutex_unlock(&instance->reset_mutex);

@@ -121,8 +121,8 @@ __register_chrdev_region(unsigned int major, unsigned int baseminor,
 	}
 
 	if (major >= CHRDEV_MAJOR_MAX) {
-		pr_err("CHRDEV \"%s\" major requested (%d) is greater than the maximum (%d)\n",
-		       name, major, CHRDEV_MAJOR_MAX);
+		pr_err("CHRDEV \"%s\" major requested (%u) is greater than the maximum (%u)\n",
+		       name, major, CHRDEV_MAJOR_MAX-1);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -553,7 +553,7 @@ int cdev_device_add(struct cdev *cdev, struct device *dev)
 	}
 
 	rc = device_add(dev);
-	if (rc)
+	if (rc && dev->devt)
 		cdev_del(cdev);
 
 	return rc;

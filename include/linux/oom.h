@@ -38,6 +38,12 @@ struct oom_control {
 	 */
 	const int order;
 
+	/*
+	 * Only kill positive adj tasks. Used to behave more like Android's
+	 * lowmemorykiller.
+	 */
+	const bool only_positive_adj;
+
 	/* Used by oom implementation, do not set */
 	unsigned long totalpages;
 	struct task_struct *chosen;
@@ -45,6 +51,7 @@ struct oom_control {
 };
 
 extern struct mutex oom_lock;
+extern struct mutex oom_adj_mutex;
 
 static inline void set_current_oom_origin(void)
 {
@@ -63,7 +70,11 @@ static inline bool oom_task_origin(const struct task_struct *p)
 
 static inline bool tsk_is_oom_victim(struct task_struct * tsk)
 {
+#ifdef CONFIG_ANDROID_SIMPLE_LMK
+	return test_ti_thread_flag(task_thread_info(tsk), TIF_MEMDIE);
+#else
 	return tsk->signal->oom_mm;
+#endif
 }
 
 /*
@@ -95,11 +106,11 @@ static inline int check_stable_address_space(struct mm_struct *mm)
 	return 0;
 }
 
-void __oom_reap_task_mm(struct mm_struct *mm);
+bool __oom_reap_task_mm(struct mm_struct *mm);
 
 extern unsigned long oom_badness(struct task_struct *p,
 		struct mem_cgroup *memcg, const nodemask_t *nodemask,
-		unsigned long totalpages);
+		unsigned long totalpages, bool only_positive_adj);
 
 extern bool out_of_memory(struct oom_control *oc);
 

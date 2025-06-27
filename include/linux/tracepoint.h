@@ -77,7 +77,7 @@ int unregister_tracepoint_module_notifier(struct notifier_block *nb)
  */
 static inline void tracepoint_synchronize_unregister(void)
 {
-	synchronize_sched();
+	synchronize_rcu();
 }
 
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
@@ -137,11 +137,8 @@ extern void syscall_unregfunc(void);
 									\
 		if (!(cond))						\
 			return;						\
-		if (rcucheck) {						\
-			if (WARN_ON_ONCE(rcu_irq_enter_disabled()))	\
-				return;					\
+		if (rcucheck)						\
 			rcu_irq_enter_irqson();				\
-		}							\
 		rcu_read_lock_sched_notrace();				\
 		it_func_ptr = rcu_dereference_sched((tp)->funcs);	\
 		if (it_func_ptr) {					\
@@ -318,7 +315,7 @@ extern void syscall_unregfunc(void);
 		static const char *___tp_str __tracepoint_string = str; \
 		___tp_str;						\
 	})
-#define __tracepoint_string	__attribute__((section("__tracepoint_str")))
+#define __tracepoint_string	__attribute__((section("__tracepoint_str"), used))
 #else
 /*
  * tracepoint_string() is used to save the string address for userspace

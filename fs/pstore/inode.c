@@ -2,6 +2,7 @@
  * Persistent Storage - ramfs parts.
  *
  * Copyright (C) 2010 Intel Corporation <tony.luck@intel.com>
+ * Copyright (C) 2020 XiaoMi, Inc.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -423,6 +424,13 @@ int pstore_mkfile(struct dentry *root, struct pstore_record *record)
 #ifdef CONFIG_PSTORE_LAST_KMSG
 	if (record->type == PSTORE_TYPE_CONSOLE) {
 		console_buffer = record->buf;
+		console_bufsize = size;
+	}
+#endif
+
+#ifdef CONFIG_PSTORE_LAST_KMSG
+	if (record->type == PSTORE_TYPE_CONSOLE) {
+		console_buffer = private->record->buf;
 		console_bufsize = size;
 	}
 #endif

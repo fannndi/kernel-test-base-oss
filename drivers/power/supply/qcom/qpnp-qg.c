@@ -1,5 +1,5 @@
 /* Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- *
+ * Copyright (C) 2020 XiaoMi, Inc.
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -1129,9 +1129,17 @@ static void process_udata_work(struct work_struct *work)
 	struct qpnp_qg *chip = container_of(work,
 			struct qpnp_qg, udata_work);
 	int rc;
+	bool input_present = is_input_present(chip);
 
-	if (chip->udata.param[QG_CC_SOC].valid)
-		chip->cc_soc = chip->udata.param[QG_CC_SOC].data;
+	if (chip->udata.param[QG_CC_SOC].valid) {
+		if (!input_present &&
+		    chip->cc_soc < chip->udata.param[QG_CC_SOC].data)
+			pr_info("cc_soc %d is not monotonic. old cc_soc: %d\n",
+				chip->udata.param[QG_CC_SOC].data,
+				chip->cc_soc);
+		else
+			chip->cc_soc = chip->udata.param[QG_CC_SOC].data;
+	}
 
 	if (chip->udata.param[QG_BATT_SOC].valid)
 		chip->batt_soc = chip->udata.param[QG_BATT_SOC].data;

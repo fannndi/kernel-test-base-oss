@@ -154,6 +154,7 @@ QDF_STATUS dp_check_and_update_pending(struct dp_rx_tm_handle_cmn
 	uint32_t rx_pending_lo_threshold;
 	uint32_t nbuf_queued_total = 0;
 	uint32_t nbuf_dequeued_total = 0;
+	uint32_t rx_flushed_total = 0;
 	uint32_t pending = 0;
 	int i;
 
@@ -184,11 +185,14 @@ QDF_STATUS dp_check_and_update_pending(struct dp_rx_tm_handle_cmn
 			    rx_tm_hdl->rx_thread[i]->stats.nbuf_queued_total;
 			nbuf_dequeued_total +=
 			    rx_tm_hdl->rx_thread[i]->stats.nbuf_dequeued;
+			rx_flushed_total +=
+			    rx_tm_hdl->rx_thread[i]->stats.rx_flushed;
 		}
 	}
 
-	if (nbuf_queued_total > nbuf_dequeued_total)
-		pending = nbuf_queued_total - nbuf_dequeued_total;
+	if (nbuf_queued_total > (nbuf_dequeued_total + rx_flushed_total))
+		pending = nbuf_queued_total - (nbuf_dequeued_total +
+					       rx_flushed_total);
 
 	if (unlikely(pending > rx_pending_hl_threshold))
 		qdf_atomic_set(&rx_tm_hdl->allow_dropping, 1);
@@ -587,6 +591,8 @@ static void dp_rx_tm_thread_napi_init(struct dp_rx_thread *rx_thread)
 	init_dummy_netdev(&rx_thread->netdev);
 	netif_napi_add(&rx_thread->netdev, &rx_thread->napi,
 		       dp_rx_tm_thread_napi_poll, 64);
+	// Set the device as threaded
+	dev_set_threaded(&rx_thread->netdev, true);
 	napi_enable(&rx_thread->napi);
 }
 
