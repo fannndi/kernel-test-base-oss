@@ -37,16 +37,17 @@ jobs:
             zip pigz rsync jq nano clang llvm lld ccache \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-      - name: Download Clang r536225 (Android LLVM 19.0.1)
+      - name: Clone ZyC Clang
         run: |
           mkdir clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/clang-r536225/clang-r536225.tar.gz -O clang.tar.gz
-          tar -xf clang.tar.gz -C clang && rm clang.tar.gz
+          ZYC_URL=$(curl -s https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "📥 Cloning from: $ZYC_URL"
+          wget "$ZYC_URL" -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang && rm -f clang.tar.gz
 
       - name: Get Clang Version
         id: clang
-        run: |
-          echo "version=$(clang/bin/clang --version | head -n1)" >> $GITHUB_OUTPUT
+        run: echo "version=$(./clang/bin/clang --version | head -n1)" >> $GITHUB_OUTPUT
 
       - name: Set Path & Zip Name
         run: |
