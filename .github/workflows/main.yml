@@ -40,7 +40,7 @@ jobs:
       - name: Download Clang r487747 (Google Clang A15)
         run: |
           mkdir clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android14-5.15-2023-12/clang-r487747.tar.gz -O clang.tar.gz
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/clang-r487747.tar.gz -O clang.tar.gz
           tar -xf clang.tar.gz -C clang && rm clang.tar.gz
 
       - name: Get Clang Version
